@@ -1,22 +1,29 @@
-if arg[2] == "debug" then
-    require("lldebugger").start()
-end
 
 function love.load()
-    local width, height = 800, 600
+    -- Initial view (full Mandelbrot)
+    width, height = 800, 600
     love.window.setMode(width, height)
-    love.window.setTitle("Mandelbrot")
 
-    -- Mandelbrot parameters
-    --X axis is real numbers
-    --Y axis is imaginary numbers
-    local xmin, xmax = -2.5, 1.5
-    local ymin, ymax = -1.5, 1.5
-    local max_iter = 100
+    max_iter = 100
+    
+    -- Zoom parameters
+    zoom_factor = 0.25  -- How much to zoom per click (e.g., 0.5 = 2x zoom)
+    center_re = -0.5   -- Target center (real part)
+    center_im = 0      -- Target center (imaginary part)
+    xspan, yspan = 3.0, 2.5  -- Initial axis spans (xmax - xmin)
 
+    update_bounds()  -- Sets xmin/xmax/ymin/ymax based on center and span
+    redraw_fractal() -- Regenerates the fractal with new bounds
+end
+
+function love.draw()
+    love.graphics.draw(canvas)
+    love.graphics.setColor(1, 1, 1)
+end
+
+function redraw_fractal()
     canvas = love.graphics.newCanvas(width, height)
     love.graphics.setCanvas(canvas)
-
     for px = 0, width - 1 do
         for py = 0, height - 1 do
             --Converting pixel coordinates to complex number grid
@@ -49,21 +56,33 @@ function love.load()
             end
         end
     end
-
+    
     love.graphics.setCanvas()
 end
 
-function love.draw()
-    love.graphics.draw(canvas)
-    love.graphics.setColor(1, 1, 1)
+function update_bounds()
+    xmin = center_re - xspan / 2
+    xmax = center_re + xspan / 2
+    ymin = center_im - yspan / 2
+    ymax = center_im + yspan / 2
 end
 
--- local love_errorhandler = love.errorhandler
-
--- function love.errorhandler(msg)
---     if lldebugger then
---         error(msg, 2)
---     else
---         return love_errorhandler(msg)
---     end
--- end
+function love.mousepressed(x, y, button)
+    if button == 1 then  -- Left click to Zoom in
+        -- Update center to mouse position
+        center_re = xmin + (xmax - xmin) * x / width
+        center_im = ymin + (ymax - ymin) * y / height
+        
+        -- Reduce span to zoom in
+        xspan = xspan * zoom_factor
+        yspan = yspan * zoom_factor
+        
+        update_bounds()
+        redraw_fractal()
+    elseif button == 2 then  -- Right click to Zoom out
+        xspan = xspan / zoom_factor
+        yspan = yspan / zoom_factor
+        update_bounds()
+        redraw_fractal()
+    end
+end
