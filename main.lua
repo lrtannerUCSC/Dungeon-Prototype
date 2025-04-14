@@ -7,7 +7,7 @@ function love.load()
     max_iter = 100
     
     -- Zoom parameters
-    zoom_factor = 0.25  -- How much to zoom per click (e.g., 0.5 = 2x zoom)
+    zoom_factor = 0.1  -- How much to zoom per click
     center_re = -0.5   -- Target center (real part)
     center_im = 0      -- Target center (imaginary part)
     xspan, yspan = 3.0, 2.5  -- Initial axis spans (xmax - xmin)
@@ -24,6 +24,7 @@ end
 function redraw_fractal()
     canvas = love.graphics.newCanvas(width, height)
     love.graphics.setCanvas(canvas)
+    
     for px = 0, width - 1 do
         for py = 0, height - 1 do
             --Converting pixel coordinates to complex number grid
@@ -48,9 +49,8 @@ function redraw_fractal()
 
             -- Color logic (ensure escaping points are visible)
             if iter < max_iter then
-                --Measures speed that it takes to escape
-                local brightness = iter / max_iter --The fewer iterations, the brighter
-                love.graphics.setColor(brightness, brightness * 0.5, 0)
+                local r, g, b = getColor(iter, max_iter)
+                love.graphics.setColor(r, g, b)
                 love.graphics.points(px, py)
             -- else: leave black (part of the set)
             end
@@ -68,21 +68,62 @@ function update_bounds()
 end
 
 function love.mousepressed(x, y, button)
-    if button == 1 then  -- Left click to Zoom in
-        -- Update center to mouse position
+    if button == 1 then  -- Left click: Zoom in
         center_re = xmin + (xmax - xmin) * x / width
         center_im = ymin + (ymax - ymin) * y / height
-        
-        -- Reduce span to zoom in
-        xspan = xspan * zoom_factor
-        yspan = yspan * zoom_factor
-        
-        update_bounds()
-        redraw_fractal()
-    elseif button == 2 then  -- Right click to Zoom out
-        xspan = xspan / zoom_factor
-        yspan = yspan / zoom_factor
-        update_bounds()
-        redraw_fractal()
+        xspan = xspan * 0.5
+        yspan = yspan * 0.5
+        max_iter = max_iter * 1.1  -- Increase iterations to reveal deeper colors
+    elseif button == 2 then  -- Right click: Zoom out
+        xspan = xspan / 0.5
+        yspan = yspan / 0.5
+        max_iter = math.max(100, max_iter / 1.5)  -- Prevent max_iter < 100
     end
+    update_bounds()
+    redraw_fractal()
+end
+
+--https://stackoverflow.com/questions/68317097/how-to-properly-convert-hsl-colors-to-rgb-colors-in-lua
+function hslToRgb(h, s, l)
+    h = h / 360
+    s = s / 100
+    l = l / 100
+
+    local r, g, b;
+
+    if s == 0 then
+        r, g, b = l, l, l; -- achromatic
+    else
+        local function hue2rgb(p, q, t)
+            if t < 0 then t = t + 1 end
+            if t > 1 then t = t - 1 end
+            if t < 1 / 6 then return p + (q - p) * 6 * t end
+            if t < 1 / 2 then return q end
+            if t < 2 / 3 then return p + (q - p) * (2 / 3 - t) * 6 end
+            return p;
+        end
+
+        local q = l < 0.5 and l * (1 + s) or l + s - l * s;
+        local p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1 / 3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1 / 3);
+    end
+
+    if not a then a = 1 end
+    return r * 255, g * 255, b * 255, a * 255
+end
+
+function getColor(iter, max_iter)
+    -- Normalize iteration count to [0, 1]
+    local normalized = iter / max_iter
+
+    -- Map to HSL (hue ranges from 0° to 360°)
+    local hue = normalized * 360  -- 0°=red, 120°=green, 240°=blue, etc.
+    local saturation = 100        -- Full saturation
+    local lightness = 50         -- Medium lightness
+
+    -- Convert HSL to RGB
+    local r, g, b = hslToRgb(hue, saturation, lightness)
+    return r / 255, g / 255, b / 255  -- Scale to [0, 1] for LÖVE
 end
