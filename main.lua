@@ -150,6 +150,7 @@ function love.keypressed(key)
     local original_im = center_im
     local original_xspan = xspan
     local original_yspan = yspan
+    local original_max_iter = max_iter
     
     -- Calculate movement direction
     local moveX, moveY = 0, 0
@@ -218,6 +219,7 @@ function love.keypressed(key)
         center_im = original_im
         xspan = original_xspan
         yspan = original_yspan
+        max_iter = original_max_iter
     end
     
     update_bounds()
