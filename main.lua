@@ -4,23 +4,27 @@ function love.load()
     love.window.setMode(width, height)
     love.window.setTitle("Mandelbrot's Maze")
 
-    max_iter = 50
+    -- Optimization parameters
+    base_iter = 50                -- Base iteration count (constant)
+    current_zoom = 1.0            -- Zoom scaling factor
+    escape_radius = 2.0           -- Base escape radius
+    zoom_escape_factor = 1.2      -- How much to scale escape radius when zooming
     
-    -- Zoom parameters
-    zoom_factor = 0.1  -- How much to zoom per click
-    center_re = -0.5   -- Target center (real part)
-    center_im = 0      -- Target center (imaginary part)
-    xspan, yspan = 3.0, 2.5  -- Initial axis spans (xmax - xmin)
-
-    update_bounds()  -- Sets xmin/xmax/ymin/ymax based on center and span
-    redraw_fractal() -- Regenerates the fractal with new bounds
+    -- View parameters
+    zoom_factor = 0.1             -- Zoom step amount
+    center_re = -0.5              -- Target center (real part)
+    center_im = 0                 -- Target center (imaginary part)
+    xspan, yspan = 3.0, 2.5       -- Initial axis spans
     
-    -- Player as a simple square
+    update_bounds()
+    redraw_fractal()
+    
+    -- Player setup
     player = {
         x = width / 2,
         y = height / 2,
-        size = 20,          -- Size in pixels
-        color = {1, 1, 1} -- White
+        size = 20,
+        color = {1, 1, 1}
     }
 end
 
@@ -36,11 +40,13 @@ function love.draw()
         player.size, player.size)
 end
 
-function calculateMandelbrot(c_re, c_im, max_iter)
-    local x, y = 0, 0  -- Z0 = 0
+function calculateMandelbrot(c_re, c_im)
+    local x, y = 0, 0 -- Z0 = 0
     local iter = 0
+    local zoom_sq = current_zoom * current_zoom
+    local threshold = escape_radius * escape_radius * zoom_sq
     
-    while x*x + y*y <= 4 and iter < max_iter do
+    while x*x + y*y <= threshold and iter < base_iter do
         local x_new = x*x - y*y + c_re
         y = 2*x*y + c_im
         x = x_new
@@ -61,11 +67,11 @@ function redraw_fractal()
             local c_im = ymin + (ymax - ymin) * py / height
             
             -- Calculate iterations
-            local iter = calculateMandelbrot(c_re, c_im, max_iter)
+            local iter = calculateMandelbrot(c_re, c_im)
             
             -- Color and draw
-            if iter < max_iter then
-                local r, g, b = getColor(iter, max_iter)
+            if iter < base_iter then
+                local r, g, b = getColor(iter, base_iter)
                 love.graphics.setColor(r, g, b)
                 love.graphics.points(px, py)
             end
@@ -86,14 +92,17 @@ function love.mousepressed(x, y, button)
     if button == 1 then  -- Left click: Zoom in
         center_re = xmin + (xmax - xmin) * x / width
         center_im = ymin + (ymax - ymin) * y / height
-        xspan = xspan * zoom_factor
-        yspan = yspan * zoom_factor
-        max_iter = max_iter * 1.1  -- Increase iterations to reveal deeper colors
+        current_zoom = current_zoom * (1 + zoom_factor)
+        escape_radius = escape_radius * zoom_escape_factor
+        xspan = 3.0 / current_zoom
+        yspan = 2.5 / current_zoom
     elseif button == 2 then  -- Right click: Zoom out
-        xspan = xspan / zoom_factor
-        yspan = yspan / zoom_factor
-        max_iter = math.max(100, max_iter / 1.5)  -- Prevent max_iter < 100
+        current_zoom = current_zoom / (1 + zoom_factor)
+        escape_radius = escape_radius / zoom_escape_factor
+        xspan = 3.0 / current_zoom
+        yspan = 2.5 / current_zoom
     end
+    
     update_bounds()
     redraw_fractal()
 end
@@ -129,9 +138,9 @@ function hslToRgb(h, s, l)
     return r * 255, g * 255, b * 255, a * 255
 end
 
-function getColor(iter, max_iter)
+function getColor(iter, base_iter)
     -- Normalize iteration count
-    local normalized = iter / max_iter
+    local normalized = iter / base_iter
 
     -- Map to HSL (hue ranges from 0° to 360°)
     local hue = normalized * 360 
@@ -148,78 +157,66 @@ function love.keypressed(key)
     -- Store original values
     local original_re = center_re
     local original_im = center_im
-    local original_xspan = xspan
-    local original_yspan = yspan
-    local original_max_iter = max_iter
+    local original_zoom = current_zoom
     
-    -- Calculate movement direction
+    -- Movement direction
     local moveX, moveY = 0, 0
     if key == 'a' or key == 'left' then moveX = -1 end
     if key == 'd' or key == 'right' then moveX = 1 end
     if key == 'w' or key == 'up' then moveY = -1 end
     if key == 's' or key == 'down' then moveY = 1 end
     
-    -- Normalize diagonal movement
+    -- Normalize diagonal
     if moveX ~= 0 and moveY ~= 0 then
         moveX, moveY = moveX * 0.7071, moveY * 0.7071
     end
     
-    -- Movement amount (world units)
-    local moveAmount = 0.1 * xspan  -- Scales with zoom level
-    
-    local player_sizeX, player_sizeY = convertPlayerSize()
-    local player_worldX, player_worldY = convertPlayerCoordinates()
-    
-    -- Check if movement would go outside fractal
-    local function isValidPosition(x, y)
-        local points = {
-            -- Check all sides and corners
-            {x - player_sizeX/2, y},                -- left
-            {x + player_sizeX/2, y},                -- right
-            {x, y - player_sizeY/2},                -- top
-            {x, y + player_sizeY/2},                -- bottom
-            {x - player_sizeX/2, y - player_sizeY/2}, -- top-left
-            {x + player_sizeX/2, y - player_sizeY/2}, -- top-right
-            {x - player_sizeX/2, y + player_sizeY/2}, -- bottom-left
-            {x + player_sizeX/2, y + player_sizeY/2}  -- bottom-right
-        }
-        
-        for _, point in ipairs(points) do
-            if calculateMandelbrot(point[1], point[2], max_iter) < max_iter then
-                return false  -- At least one point is outside
-            end
-        end
-        return true  -- All points inside fractal
-    end
-    
-    -- Try to move (with automatic zoom)
+    -- Movement in world units (scales with zoom)
+    local moveAmount = 0.1 * xspan
     local proposed_re = center_re + moveX * moveAmount
     local proposed_im = center_im + moveY * moveAmount
-    local zoomSteps = 0
-    local maxZoomSteps = 20
     
-    -- Keep zooming in until the player fits, adjust the distance stepped to account for zoom
-    while not isValidPosition(proposed_re, proposed_im) and zoomSteps < maxZoomSteps do
-        -- Zoom in
-        xspan = xspan * 0.9
-        yspan = yspan * 0.9
-        moveAmount = 0.1 * xspan  -- Update move amount for new zoom
+    -- Check collision at new position
+    local function isValidPosition(x, y)
+        local sizeX, sizeY = convertPlayerSize()
+        local points = {
+            {x - sizeX/2, y}, {x + sizeX/2, y},  -- left/right
+            {x, y - sizeY/2}, {x, y + sizeY/2},  -- top/bottom
+            {x - sizeX/2, y - sizeY/2},          -- corners
+            {x + sizeX/2, y - sizeY/2},
+            {x - sizeX/2, y + sizeY/2},
+            {x + sizeX/2, y + sizeY/2}
+        }
+        
+        for _, p in ipairs(points) do
+            if calculateMandelbrot(p[1], p[2]) < base_iter then
+                return false
+            end
+        end
+        return true
+    end
+    
+    local zoomSteps = 0
+    -- Decrease step size cus sometimes its too big no matter how much zoom
+    -- Seems to make it way smoother descending
+    local moveDecreaser = 0.25
+    while not isValidPosition(proposed_re, proposed_im) and zoomSteps < 20 do
+        current_zoom = current_zoom * 1.1
+        escape_radius = escape_radius * zoom_escape_factor
+        xspan = 3.0 / current_zoom
+        yspan = 2.5 / current_zoom
+        moveAmount = 0.1 * xspan * moveDecreaser -- Recalculate move amount
         proposed_re = center_re + moveX * moveAmount
         proposed_im = center_im + moveY * moveAmount
         zoomSteps = zoomSteps + 1
-        max_iter = max_iter * 1.05  -- Increase detail when zooming
     end
     
-    -- Apply movement if possible
+    -- Apply movement if valid
     if isValidPosition(proposed_re, proposed_im) then
         center_re = proposed_re
         center_im = proposed_im
     else
-        center_re = original_re
-        center_im = original_im
-        xspan = original_xspan
-        yspan = original_yspan
-        max_iter = original_max_iter
+        current_zoom = original_zoom
     end
     
     update_bounds()
