@@ -1,0 +1,7 @@
+I tried to leave comments on the submission but there was an error doing so, so here is a resubmit.
+I also am adding some changes I just made, the original submission was on time and good,
+so if we would lose points for the late submission, just grade that one.
+However, these improvements are cool, so I thought you would want to see them.
+Contributions:
+Leif did fractal visual generation, and made zooming in work
+Miguel did movement and made the sprite, which is not currently used due to debugging.

@@ -5,7 +5,7 @@ function love.load()
     love.window.setTitle("Mandelbrot's Maze")
 
     -- Optimization parameters
-    base_iter = 50                -- Base iteration count (constant)
+    base_iter = 75                -- Base iteration count (constant)
     current_zoom = 1.0            -- Zoom scaling factor
     escape_radius = 2.0           -- Base escape radius
     zoom_escape_factor = 1.2      -- How much to scale escape radius when zooming
@@ -92,12 +92,12 @@ function love.mousepressed(x, y, button)
     if button == 1 then  -- Left click: Zoom in
         center_re = xmin + (xmax - xmin) * x / width
         center_im = ymin + (ymax - ymin) * y / height
-        current_zoom = current_zoom * (1 + zoom_factor)
+        current_zoom = current_zoom * (1 + zoom_factor*5)
         escape_radius = escape_radius * zoom_escape_factor
         xspan = 3.0 / current_zoom
         yspan = 2.5 / current_zoom
     elseif button == 2 then  -- Right click: Zoom out
-        current_zoom = current_zoom / (1 + zoom_factor)
+        current_zoom = current_zoom / (1 + zoom_factor*5)
         escape_radius = escape_radius / zoom_escape_factor
         xspan = 3.0 / current_zoom
         yspan = 2.5 / current_zoom
