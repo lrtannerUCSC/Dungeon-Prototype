@@ -1,10 +1,10 @@
-
 function love.load()
     -- Initial view (full Mandelbrot)
     width, height = 800, 600
     love.window.setMode(width, height)
+    love.window.setTitle("Mandelbrot's Maze")
 
-    max_iter = 100
+    max_iter = 50
     
     -- Zoom parameters
     zoom_factor = 0.1  -- How much to zoom per click
@@ -14,11 +14,40 @@ function love.load()
 
     update_bounds()  -- Sets xmin/xmax/ymin/ymax based on center and span
     redraw_fractal() -- Regenerates the fractal with new bounds
+    
+    -- Player as a simple square
+    player = {
+        x = width / 2,
+        y = height / 2,
+        size = 20,          -- Size in pixels
+        color = {1, 1, 1} -- White
+    }
 end
 
 function love.draw()
+    -- Draw fractal
     love.graphics.draw(canvas)
-    love.graphics.setColor(1, 1, 1)
+    
+    -- Draw player square
+    love.graphics.setColor(player.color)
+    love.graphics.rectangle('fill', 
+        player.x - player.size/2, 
+        player.y - player.size/2, 
+        player.size, player.size)
+end
+
+function calculateMandelbrot(c_re, c_im, max_iter)
+    local x, y = 0, 0  -- Z0 = 0
+    local iter = 0
+    
+    while x*x + y*y <= 4 and iter < max_iter do
+        local x_new = x*x - y*y + c_re
+        y = 2*x*y + c_im
+        x = x_new
+        iter = iter + 1
+    end
+    
+    return iter
 end
 
 function redraw_fractal()
@@ -27,32 +56,18 @@ function redraw_fractal()
     
     for px = 0, width - 1 do
         for py = 0, height - 1 do
-            --Converting pixel coordinates to complex number grid
-                --Each pixel is calculated individually
-                --To see if it is in the set or not
+            -- Convert pixel to complex coordinates
             local c_re = xmin + (xmax - xmin) * px / width
             local c_im = ymin + (ymax - ymin) * py / height
-
-            local x, y = 0, 0 --Z_0 = 0
-            local iter = 0 --Start at 0 iterations
-            while x*x + y*y <= 4 and iter < max_iter do --x*x + y*y = Z_n^2
-            --if x*x + y*y <= 4 then Z_n^2 > 2, meaning it diverges
-            --Z_n^2 = (x+iy)^2 = x^2 - y^2 + 2ixy
-            --Separate real and imageinary parts
-                --REAL: x^2-y^2+c_re
-                --IMAG: 2xy+c_im
-                local x_new = x*x - y*y + c_re
-                y = 2*x*y + c_im
-                x = x_new
-                iter = iter + 1
-            end
-
-            -- Color logic (ensure escaping points are visible)
+            
+            -- Calculate iterations
+            local iter = calculateMandelbrot(c_re, c_im, max_iter)
+            
+            -- Color and draw
             if iter < max_iter then
                 local r, g, b = getColor(iter, max_iter)
                 love.graphics.setColor(r, g, b)
                 love.graphics.points(px, py)
-            -- else: leave black (part of the set)
             end
         end
     end
@@ -71,12 +86,12 @@ function love.mousepressed(x, y, button)
     if button == 1 then  -- Left click: Zoom in
         center_re = xmin + (xmax - xmin) * x / width
         center_im = ymin + (ymax - ymin) * y / height
-        xspan = xspan * 0.5
-        yspan = yspan * 0.5
+        xspan = xspan * zoom_factor
+        yspan = yspan * zoom_factor
         max_iter = max_iter * 1.1  -- Increase iterations to reveal deeper colors
     elseif button == 2 then  -- Right click: Zoom out
-        xspan = xspan / 0.5
-        yspan = yspan / 0.5
+        xspan = xspan / zoom_factor
+        yspan = yspan / zoom_factor
         max_iter = math.max(100, max_iter / 1.5)  -- Prevent max_iter < 100
     end
     update_bounds()
@@ -115,15 +130,109 @@ function hslToRgb(h, s, l)
 end
 
 function getColor(iter, max_iter)
-    -- Normalize iteration count to [0, 1]
+    -- Normalize iteration count
     local normalized = iter / max_iter
 
     -- Map to HSL (hue ranges from 0° to 360°)
-    local hue = normalized * 360  -- 0°=red, 120°=green, 240°=blue, etc.
-    local saturation = 100        -- Full saturation
-    local lightness = 50         -- Medium lightness
+    local hue = normalized * 360 
+    local saturation = 100
+    local lightness = 50
 
     -- Convert HSL to RGB
     local r, g, b = hslToRgb(hue, saturation, lightness)
-    return r / 255, g / 255, b / 255  -- Scale to [0, 1] for LÖVE
+    return r / 255, g / 255, b / 255  -- Scale to [0, 1] cus thats how LOVE does it
+end
+
+-- Checking if move is valid, and adjusting zoom accordingly
+function love.keypressed(key)
+    -- Store original values
+    local original_re = center_re
+    local original_im = center_im
+    local original_xspan = xspan
+    local original_yspan = yspan
+    
+    -- Calculate movement direction
+    local moveX, moveY = 0, 0
+    if key == 'a' or key == 'left' then moveX = -1 end
+    if key == 'd' or key == 'right' then moveX = 1 end
+    if key == 'w' or key == 'up' then moveY = -1 end
+    if key == 's' or key == 'down' then moveY = 1 end
+    
+    -- Normalize diagonal movement
+    if moveX ~= 0 and moveY ~= 0 then
+        moveX, moveY = moveX * 0.7071, moveY * 0.7071
+    end
+    
+    -- Movement amount (world units)
+    local moveAmount = 0.1 * xspan  -- Scales with zoom level
+    
+    local player_sizeX, player_sizeY = convertPlayerSize()
+    local player_worldX, player_worldY = convertPlayerCoordinates()
+    
+    -- Check if movement would go outside fractal
+    local function isValidPosition(x, y)
+        local points = {
+            -- Check all sides and corners
+            {x - player_sizeX/2, y},                -- left
+            {x + player_sizeX/2, y},                -- right
+            {x, y - player_sizeY/2},                -- top
+            {x, y + player_sizeY/2},                -- bottom
+            {x - player_sizeX/2, y - player_sizeY/2}, -- top-left
+            {x + player_sizeX/2, y - player_sizeY/2}, -- top-right
+            {x - player_sizeX/2, y + player_sizeY/2}, -- bottom-left
+            {x + player_sizeX/2, y + player_sizeY/2}  -- bottom-right
+        }
+        
+        for _, point in ipairs(points) do
+            if calculateMandelbrot(point[1], point[2], max_iter) < max_iter then
+                return false  -- At least one point is outside
+            end
+        end
+        return true  -- All points inside fractal
+    end
+    
+    -- Try to move (with automatic zoom)
+    local proposed_re = center_re + moveX * moveAmount
+    local proposed_im = center_im + moveY * moveAmount
+    local zoomSteps = 0
+    local maxZoomSteps = 20
+    
+    -- Keep zooming in until the player fits, adjust the distance stepped to account for zoom
+    while not isValidPosition(proposed_re, proposed_im) and zoomSteps < maxZoomSteps do
+        -- Zoom in
+        xspan = xspan * 0.9
+        yspan = yspan * 0.9
+        moveAmount = 0.1 * xspan  -- Update move amount for new zoom
+        proposed_re = center_re + moveX * moveAmount
+        proposed_im = center_im + moveY * moveAmount
+        zoomSteps = zoomSteps + 1
+        max_iter = max_iter * 1.05  -- Increase detail when zooming
+    end
+    
+    -- Apply movement if possible
+    if isValidPosition(proposed_re, proposed_im) then
+        center_re = proposed_re
+        center_im = proposed_im
+    else
+        center_re = original_re
+        center_im = original_im
+        xspan = original_xspan
+        yspan = original_yspan
+    end
+    
+    update_bounds()
+    redraw_fractal()
+end
+
+-- Basic helper functions cus these were being used often
+function convertPlayerSize()
+    local player_sizeX = (xmax - xmin) * player.size / width
+    local player_sizeY = (ymax - ymin) * player.size / height
+    return player_sizeX, player_sizeY
+end
+
+function convertPlayerCoordinates()
+    local player_worldX = xmin + (xmax - xmin) * player.x / width
+    local player_worldY = ymin + (ymax - ymin) * player.y / height
+    return player_worldX, player_worldY
 end
