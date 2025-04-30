@@ -24,8 +24,89 @@ function love.load()
         x = width / 2,
         y = height / 2,
         size = 20,
-        color = {1, 1, 1}
+        color = {1, 1, 1},
+        speed = 0.01
     }
+
+    -- Movement tracking
+    keysPressed = {
+        up = false,
+        down = false,
+        left = false,
+        right = false
+    }
+end
+
+function love.update(dt)
+    -- Check for continuous movement
+    local moveX, moveY = 0, 0
+    if love.keyboard.isDown('a', 'left') then moveX = -1 end
+    if love.keyboard.isDown('d', 'right') then moveX = 1 end
+    if love.keyboard.isDown('w', 'up') then moveY = -1 end
+    if love.keyboard.isDown('s', 'down') then moveY = 1 end
+    
+    -- Only process movement if any key is pressed
+    if moveX ~= 0 or moveY ~= 0 then
+        -- Normalize diagonal
+        if moveX ~= 0 and moveY ~= 0 then
+            moveX, moveY = moveX * 0.7071, moveY * 0.7071
+        end
+        
+        -- Movement in world units (scales with zoom)
+        local moveAmount = player.speed * xspan * dt * 5  -- Adjusted for smooth movement
+        
+        -- Store original values
+        local original_re = center_re
+        local original_im = center_im
+        local original_zoom = current_zoom
+        
+        -- Proposed new position
+        local proposed_re = center_re + moveX * moveAmount
+        local proposed_im = center_im + moveY * moveAmount
+        
+        -- Check collision at new position
+        local zoomSteps = 0
+        local moveDecreaser = 0.25
+        while not isValidPosition(proposed_re, proposed_im) and zoomSteps < 20 do
+            current_zoom = current_zoom * 1.1
+            escape_radius = escape_radius * zoom_escape_factor
+            xspan = 3.0 / current_zoom
+            yspan = 2.5 / current_zoom
+            moveAmount = player.speed * xspan * dt * 5 * moveDecreaser -- Recalculate move amount
+            proposed_re = center_re + moveX * moveAmount
+            proposed_im = center_im + moveY * moveAmount
+            zoomSteps = zoomSteps + 1
+        end
+        
+        -- Apply movement if valid
+        if isValidPosition(proposed_re, proposed_im) then
+            center_re = proposed_re
+            center_im = proposed_im
+            update_bounds()
+            redraw_fractal()
+        else
+            current_zoom = original_zoom
+        end
+    end
+end
+
+function isValidPosition(x, y)
+    local sizeX, sizeY = convertPlayerSize()
+    local points = {
+        {x - sizeX, y}, {x + sizeX, y},  -- left/right
+        {x, y - sizeY}, {x, y + sizeY},  -- top/bottom
+        {x - sizeX, y - sizeY},          -- corners
+        {x + sizeX, y - sizeY},
+        {x - sizeX, y + sizeY},
+        {x + sizeX, y + sizeY}
+    }
+    
+    for _, p in ipairs(points) do
+        if calculateMandelbrot(p[1], p[2]) < base_iter then
+            return false
+        end
+    end
+    return true
 end
 
 function love.draw()
@@ -153,75 +234,75 @@ function getColor(iter, base_iter)
 end
 
 -- Checking if move is valid, and adjusting zoom accordingly
-function love.keypressed(key)
-    -- Store original values
-    local original_re = center_re
-    local original_im = center_im
-    local original_zoom = current_zoom
+-- function love.keypressed(key)
+--     -- Store original values
+--     local original_re = center_re
+--     local original_im = center_im
+--     local original_zoom = current_zoom
     
-    -- Movement direction
-    local moveX, moveY = 0, 0
-    if key == 'a' or key == 'left' then moveX = -1 end
-    if key == 'd' or key == 'right' then moveX = 1 end
-    if key == 'w' or key == 'up' then moveY = -1 end
-    if key == 's' or key == 'down' then moveY = 1 end
+--     -- Movement direction
+--     local moveX, moveY = 0, 0
+--     if key == 'a' or key == 'left' then moveX = -1 end
+--     if key == 'd' or key == 'right' then moveX = 1 end
+--     if key == 'w' or key == 'up' then moveY = -1 end
+--     if key == 's' or key == 'down' then moveY = 1 end
     
-    -- Normalize diagonal
-    if moveX ~= 0 and moveY ~= 0 then
-        moveX, moveY = moveX * 0.7071, moveY * 0.7071
-    end
+--     -- Normalize diagonal
+--     if moveX ~= 0 and moveY ~= 0 then
+--         moveX, moveY = moveX * 0.7071, moveY * 0.7071
+--     end
     
-    -- Movement in world units (scales with zoom)
-    local moveAmount = 0.1 * xspan
-    local proposed_re = center_re + moveX * moveAmount
-    local proposed_im = center_im + moveY * moveAmount
+--     -- Movement in world units (scales with zoom)
+--     local moveAmount = 0.1 * xspan
+--     local proposed_re = center_re + moveX * moveAmount
+--     local proposed_im = center_im + moveY * moveAmount
     
-    -- Check collision at new position
-    local function isValidPosition(x, y)
-        local sizeX, sizeY = convertPlayerSize()
-        local points = {
-            {x - sizeX/2, y}, {x + sizeX/2, y},  -- left/right
-            {x, y - sizeY/2}, {x, y + sizeY/2},  -- top/bottom
-            {x - sizeX/2, y - sizeY/2},          -- corners
-            {x + sizeX/2, y - sizeY/2},
-            {x - sizeX/2, y + sizeY/2},
-            {x + sizeX/2, y + sizeY/2}
-        }
+--     -- Check collision at new position
+--     local function isValidPosition(x, y)
+--         local sizeX, sizeY = convertPlayerSize()
+--         local points = {
+--             {x - sizeX/2, y}, {x + sizeX/2, y},  -- left/right
+--             {x, y - sizeY/2}, {x, y + sizeY/2},  -- top/bottom
+--             {x - sizeX/2, y - sizeY/2},          -- corners
+--             {x + sizeX/2, y - sizeY/2},
+--             {x - sizeX/2, y + sizeY/2},
+--             {x + sizeX/2, y + sizeY/2}
+--         }
         
-        for _, p in ipairs(points) do
-            if calculateMandelbrot(p[1], p[2]) < base_iter then
-                return false
-            end
-        end
-        return true
-    end
+--         for _, p in ipairs(points) do
+--             if calculateMandelbrot(p[1], p[2]) < base_iter then
+--                 return false
+--             end
+--         end
+--         return true
+--     end
     
-    local zoomSteps = 0
-    -- Decrease step size cus sometimes its too big no matter how much zoom
-    -- Seems to make it way smoother descending
-    local moveDecreaser = 0.25
-    while not isValidPosition(proposed_re, proposed_im) and zoomSteps < 20 do
-        current_zoom = current_zoom * 1.1
-        escape_radius = escape_radius * zoom_escape_factor
-        xspan = 3.0 / current_zoom
-        yspan = 2.5 / current_zoom
-        moveAmount = 0.1 * xspan * moveDecreaser -- Recalculate move amount
-        proposed_re = center_re + moveX * moveAmount
-        proposed_im = center_im + moveY * moveAmount
-        zoomSteps = zoomSteps + 1
-    end
+--     local zoomSteps = 0
+--     -- Decrease step size cus sometimes its too big no matter how much zoom
+--     -- Seems to make it way smoother descending
+--     local moveDecreaser = 0.25
+--     while not isValidPosition(proposed_re, proposed_im) and zoomSteps < 20 do
+--         current_zoom = current_zoom * 1.1
+--         escape_radius = escape_radius * zoom_escape_factor
+--         xspan = 3.0 / current_zoom
+--         yspan = 2.5 / current_zoom
+--         moveAmount = 0.1 * xspan * moveDecreaser -- Recalculate move amount
+--         proposed_re = center_re + moveX * moveAmount
+--         proposed_im = center_im + moveY * moveAmount
+--         zoomSteps = zoomSteps + 1
+--     end
     
-    -- Apply movement if valid
-    if isValidPosition(proposed_re, proposed_im) then
-        center_re = proposed_re
-        center_im = proposed_im
-    else
-        current_zoom = original_zoom
-    end
+--     -- Apply movement if valid
+--     if isValidPosition(proposed_re, proposed_im) then
+--         center_re = proposed_re
+--         center_im = proposed_im
+--     else
+--         current_zoom = original_zoom
+--     end
     
-    update_bounds()
-    redraw_fractal()
-end
+--     update_bounds()
+--     redraw_fractal()
+-- end
 
 -- Basic helper functions cus these were being used often
 function convertPlayerSize()
