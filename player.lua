@@ -18,7 +18,7 @@ function Player:new(x, y)
     instance.width = 40
     instance.height = 40
     instance.size = 20 -- Used for collision
-    instance.speed = 120
+    instance.speed = 0.01
     
     -- Complex coordinates for fractal space
     instance.complex_x = 0
