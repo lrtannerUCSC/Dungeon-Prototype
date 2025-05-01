@@ -1,5 +1,3 @@
--- entity.lua
--- Base Entity class for all game objects
 
 local Entity = {}
 Entity.__index = Entity

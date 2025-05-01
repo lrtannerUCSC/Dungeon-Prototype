@@ -1,21 +1,24 @@
 local Entity = require("entity")
 local Player = require("player")
 local Item = require("item")
+local Enemy = require("enemy")
 
--- Game state
+
 local EntityManager = require("entitymanager")
 local em = EntityManager:new()
+local entity_registry = {} -- Compatibility with old code
 
 function register_entity(entity)
     -- Convert screen position to complex coords on registration
     entity.complex_x = xmin + (xmax - xmin) * entity.x / width
     entity.complex_y = ymin + (ymax - ymin) * entity.y / height
     table.insert(entity_registry, entity)
+    em:register(entity) -- Also register with entity manager
 end
 
 function love.load()
-
-    love.entities = entities  -- Make entities accessible globally
+    -- Make entities accessible globally
+    love.entities = em.entities
 
     -- Initial view (full Mandelbrot)
     width, height = 800, 600
@@ -47,28 +50,65 @@ function love.load()
 
     -- Create player (centered on screen)
     player = Player:new(width/2, height/2)
+    player.current_zoom = current_zoom
     em:register(player)
+    
+    -- Initialize player's viewport info
+    player.viewport = {
+        xmin = xmin,
+        xmax = xmax,
+        ymin = ymin,
+        ymax = ymax
+    }
+    
+    -- Update player's complex coordinates
+    player.complex_x = center_re
+    player.complex_y = center_im
 
     -- Spawn initial items
     for i = 1, 5 do
         local re, im = get_random_valid_position()
         if re then
-            em:register(Item:new(re, im, "Health", "healing"))
+            local itemType = math.random() < 0.7 and "healing" or "power"
+            local name = itemType == "healing" and "Health" or "Power"
+            local item = Item:new(re, im, name, itemType)
+            em:register(item)
         end
     end
+    
+    -- Spawn initial enemies
+    for i = 1, 3 do
+        local re, im = get_random_valid_position()
+        if re then
+            local enemyTypes = {"Slime", "Goblin", "Skeleton"}
+            local enemyType = enemyTypes[math.random(1, #enemyTypes)]
+            local health = math.random(20, 40)
+            
+            -- Convert complex coords to screen coords for initial position
+            local screenX = width * (re - xmin) / (xmax - xmin)
+            local screenY = height * (im - ymin) / (ymax - ymin)
+            
+            local enemy = Enemy:new(screenX, screenY, enemyType, health)
+            enemy.complex_x = re
+            enemy.complex_y = im
+            enemy.complex_size = 0.05
+            em:register(enemy)
+        end
+    end
+    
+    -- Game state variables
+    gameOver = false
+    score = 0
+    enemiesDefeated = 0
+    itemsCollected = 0
 end
 
 function love.update(dt)
+    if gameOver then return end
 
-    for _, item in ipairs(em.entities) do
-        if item.type == "item" and player:checkCollision(item) then
-            player:onCollision(item)
-            item:onCollision(player)
-        end
-    end
-
+    -- Process entity collisions and updates
     em:updateAll(dt)
-
+    
     -- Check for continuous movement
     local moveX, moveY = 0, 0
     if love.keyboard.isDown('a', 'left') then moveX = -1 end
@@ -117,11 +157,26 @@ function love.update(dt)
             player.complex_y = center_im
             update_bounds()
             redraw_fractal()
+            
+            -- Update player zoom info (for entity spawning calculation)
+            player.current_zoom = current_zoom
+            
+            -- Update player's viewport
+            player.viewport = {
+                xmin = xmin,
+                xmax = xmax,
+                ymin = ymin,
+                ymax = ymax
+            }
         else
             current_zoom = original_zoom
         end
     end
-
+    
+    -- Check game over condition
+    if player.health <= 0 then
+        gameOver = true
+    end
 end
 
 function isValidPosition(x, y)
@@ -146,6 +201,34 @@ end
 function love.draw()
     love.graphics.draw(canvas)
     em:drawAll()  -- Draws all registered entities
+    
+    -- Draw UI elements
+    drawUI()
+    
+    -- Draw game over screen if needed
+    if gameOver then
+        drawGameOver()
+    end
+end
+
+function drawUI()
+    -- Draw score and stats
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.print("Score: " .. score, 10, 10)
+    love.graphics.print("Zoom: " .. string.format("%.1fx", current_zoom), 10, 30)
+    love.graphics.print("Health: " .. player.health .. "/" .. player.maxHealth, 10, 50)
+end
+
+function drawGameOver()
+    love.graphics.setColor(0, 0, 0, 0.7)
+    love.graphics.rectangle("fill", 0, 0, width, height)
+    
+    love.graphics.setColor(1, 0.3, 0.3)
+    love.graphics.print("GAME OVER", width/2 - 50, height/2 - 30, 0, 2, 2)
+    
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.print("Final Score: " .. score, width/2 - 50, height/2 + 20)
+    love.graphics.print("Press 'R' to restart", width/2 - 60, height/2 + 50)
 end
 
 function calculateMandelbrot(c_re, c_im)
@@ -185,7 +268,10 @@ function redraw_fractal()
             end
         end
     end
+    
+    -- Update entity positions based on new view
     em:updatePositions(xmin, xmax, ymin, ymax, width, height)
+    
     love.graphics.setCanvas()
 end
 
@@ -197,15 +283,7 @@ function update_bounds()
 end
 
 function update_entity_positions()
-    for _, entity in ipairs(entity_registry) do
-        -- Convert complex to screen coordinates
-        entity.x = width * (entity.complex_x - xmin) / (xmax - xmin)
-        entity.y = height * (entity.complex_y - ymin) / (ymax - ymin)
-        
-        -- Calculate size scaling
-        local viewport_width = xmax - xmin
-        entity.display_size = (entity.complex_size / viewport_width) * width
-    end
+    em:updatePositions(xmin, xmax, ymin, ymax, width, height)
 end
 
 function get_random_valid_position()
@@ -223,6 +301,10 @@ function get_random_valid_position()
 end
 
 function love.mousepressed(x, y, button)
+    if gameOver then
+        return
+    end
+    
     if button == 1 then  -- Left click: Zoom in
         center_re = xmin + (xmax - xmin) * x / width
         center_im = ymin + (ymax - ymin) * y / height
@@ -230,15 +312,40 @@ function love.mousepressed(x, y, button)
         escape_radius = escape_radius * zoom_escape_factor
         xspan = 3.0 / current_zoom
         yspan = 2.5 / current_zoom
+        
+        -- Update player's zoom info
+        player.current_zoom = current_zoom
     elseif button == 2 then  -- Right click: Zoom out
         current_zoom = current_zoom / (1 + zoom_factor*5)
         escape_radius = escape_radius / zoom_escape_factor
         xspan = 3.0 / current_zoom
         yspan = 2.5 / current_zoom
+        
+        -- Update player's zoom info
+        player.current_zoom = current_zoom
     end
     
     update_bounds()
     redraw_fractal()
+    
+    -- Update player's viewport after zoom
+    player.viewport = {
+        xmin = xmin,
+        xmax = xmax,
+        ymin = ymin,
+        ymax = ymax
+    }
+end
+
+function love.keypressed(key)
+    if key == 'r' and gameOver then
+        -- Restart game
+        love.load()
+    end
+    
+    if key == 'escape' then
+        love.event.quit()
+    end
 end
 
 --https://stackoverflow.com/questions/68317097/how-to-properly-convert-hsl-colors-to-rgb-colors-in-lua
