@@ -11,36 +11,18 @@ function Player:new(x, y)
     local instance = Entity:new(x, y)
     setmetatable(instance, self)
     
-    -- Player-specific properties
     instance.type = "player"
-    instance.color = {0, 1, 0}  -- Green
-    instance.width = 40
-    instance.height = 40
-    instance.speed = 200
+    instance.color = {1, 1, 1}
+    instance.size = 20
+    instance.speed = 0.01
     instance.health = 100
     instance.maxHealth = 100
     
-    return instance
-end
-
-function Player:update(dt)
-    -- Handle player movement with WASD
-    if love.keyboard.isDown("w") then
-        self:move(0, -self.speed * dt)
-    end
-    if love.keyboard.isDown("s") then
-        self:move(0, self.speed * dt)
-    end
-    if love.keyboard.isDown("a") then
-        self:move(-self.speed * dt, 0)
-    end
-    if love.keyboard.isDown("d") then
-        self:move(self.speed * dt, 0)
-    end
+    instance.complex_x = center_re
+    instance.complex_y = center_im
+    instance.complex_size = 0.05
     
-    -- Keep player on screen
-    self.x = math.max(self.width/2, math.min(self.x, love.graphics.getWidth() - self.width/2))
-    self.y = math.max(self.height/2, math.min(self.y, love.graphics.getHeight() - self.height/2))
+    return instance
 end
 
 function Player:onCollision(other)

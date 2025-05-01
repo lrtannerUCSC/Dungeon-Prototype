@@ -47,9 +47,29 @@ function Entity:move(dx, dy)
     self.y = self.y + dy
 end
 
-function Entity:checkCollision(other)
+function Entity:checkScreenCollision(other)
+    -- Traditional screen-space collision
     return math.abs(self.x - other.x) < (self.width/2 + other.width/2) and
            math.abs(self.y - other.y) < (self.height/2 + other.height/2)
+end
+
+function Entity:checkComplexCollision(other)
+    -- Only works if both entities have complex coordinates
+    if not (self.complex_x and other.complex_x) then return false end
+    
+    local dx = self.complex_x - other.complex_x
+    local dy = self.complex_y - other.complex_y
+    local combined_radius = (self.complex_size + other.complex_size)/2
+    return (dx*dx + dy*dy) < (combined_radius*combined_radius)
+end
+
+-- Default to screen collision
+function Entity:checkCollision(other)
+    if self.complex_x and other.complex_x then
+        return self:checkComplexCollision(other)
+    else
+        return self:checkScreenCollision(other)
+    end
 end
 
 

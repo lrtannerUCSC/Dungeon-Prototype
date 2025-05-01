@@ -1,4 +1,22 @@
+local Entity = require("entity")
+local Player = require("player")
+local Item = require("item")
+
+-- Game state
+local EntityManager = require("entitymanager")
+local em = EntityManager:new()
+
+function register_entity(entity)
+    -- Convert screen position to complex coords on registration
+    entity.complex_x = xmin + (xmax - xmin) * entity.x / width
+    entity.complex_y = ymin + (ymax - ymin) * entity.y / height
+    table.insert(entity_registry, entity)
+end
+
 function love.load()
+
+    love.entities = entities  -- Make entities accessible globally
+
     -- Initial view (full Mandelbrot)
     width, height = 800, 600
     love.window.setMode(width, height)
@@ -16,18 +34,6 @@ function love.load()
     center_im = 0                 -- Target center (imaginary part)
     xspan, yspan = 3.0, 2.5       -- Initial axis spans
     
-    update_bounds()
-    redraw_fractal()
-    
-    -- Player setup
-    player = {
-        x = width / 2,
-        y = height / 2,
-        size = 20,
-        color = {1, 1, 1},
-        speed = 0.01
-    }
-
     -- Movement tracking
     keysPressed = {
         up = false,
@@ -35,9 +41,34 @@ function love.load()
         left = false,
         right = false
     }
+
+    update_bounds()
+    redraw_fractal()
+
+    -- Create player (centered on screen)
+    player = Player:new(width/2, height/2)
+    em:register(player)
+
+    -- Spawn initial items
+    for i = 1, 5 do
+        local re, im = get_random_valid_position()
+        if re then
+            em:register(Item:new(re, im, "Health", "healing"))
+        end
+    end
 end
 
 function love.update(dt)
+
+    for _, item in ipairs(em.entities) do
+        if item.type == "item" and player:checkCollision(item) then
+            player:onCollision(item)
+            item:onCollision(player)
+        end
+    end
+
+    em:updateAll(dt)
+
     -- Check for continuous movement
     local moveX, moveY = 0, 0
     if love.keyboard.isDown('a', 'left') then moveX = -1 end
@@ -82,12 +113,15 @@ function love.update(dt)
         if isValidPosition(proposed_re, proposed_im) then
             center_re = proposed_re
             center_im = proposed_im
+            player.complex_x = center_re
+            player.complex_y = center_im
             update_bounds()
             redraw_fractal()
         else
             current_zoom = original_zoom
         end
     end
+
 end
 
 function isValidPosition(x, y)
@@ -110,15 +144,8 @@ function isValidPosition(x, y)
 end
 
 function love.draw()
-    -- Draw fractal
     love.graphics.draw(canvas)
-    
-    -- Draw player square
-    love.graphics.setColor(player.color)
-    love.graphics.rectangle('fill', 
-        player.x - player.size/2, 
-        player.y - player.size/2, 
-        player.size, player.size)
+    em:drawAll()  -- Draws all registered entities
 end
 
 function calculateMandelbrot(c_re, c_im)
@@ -158,7 +185,7 @@ function redraw_fractal()
             end
         end
     end
-    
+    em:updatePositions(xmin, xmax, ymin, ymax, width, height)
     love.graphics.setCanvas()
 end
 
@@ -167,6 +194,32 @@ function update_bounds()
     xmax = center_re + xspan / 2
     ymin = center_im - yspan / 2
     ymax = center_im + yspan / 2
+end
+
+function update_entity_positions()
+    for _, entity in ipairs(entity_registry) do
+        -- Convert complex to screen coordinates
+        entity.x = width * (entity.complex_x - xmin) / (xmax - xmin)
+        entity.y = height * (entity.complex_y - ymin) / (ymax - ymin)
+        
+        -- Calculate size scaling
+        local viewport_width = xmax - xmin
+        entity.display_size = (entity.complex_size / viewport_width) * width
+    end
+end
+
+function get_random_valid_position()
+    local attempts = 0
+    while attempts < 100 do  -- Prevent infinite loops
+        local re = xmin + math.random() * (xmax - xmin)
+        local im = ymin + math.random() * (ymax - ymin)
+        
+        if calculateMandelbrot(re, im) >= base_iter then
+            return re, im  -- Found valid spot
+        end
+        attempts = attempts + 1
+    end
+    return nil  -- Failed to find valid position
 end
 
 function love.mousepressed(x, y, button)
@@ -232,77 +285,6 @@ function getColor(iter, base_iter)
     local r, g, b = hslToRgb(hue, saturation, lightness)
     return r / 255, g / 255, b / 255  -- Scale to [0, 1] cus thats how LOVE does it
 end
-
--- Checking if move is valid, and adjusting zoom accordingly
--- function love.keypressed(key)
---     -- Store original values
---     local original_re = center_re
---     local original_im = center_im
---     local original_zoom = current_zoom
-    
---     -- Movement direction
---     local moveX, moveY = 0, 0
---     if key == 'a' or key == 'left' then moveX = -1 end
---     if key == 'd' or key == 'right' then moveX = 1 end
---     if key == 'w' or key == 'up' then moveY = -1 end
---     if key == 's' or key == 'down' then moveY = 1 end
-    
---     -- Normalize diagonal
---     if moveX ~= 0 and moveY ~= 0 then
---         moveX, moveY = moveX * 0.7071, moveY * 0.7071
---     end
-    
---     -- Movement in world units (scales with zoom)
---     local moveAmount = 0.1 * xspan
---     local proposed_re = center_re + moveX * moveAmount
---     local proposed_im = center_im + moveY * moveAmount
-    
---     -- Check collision at new position
---     local function isValidPosition(x, y)
---         local sizeX, sizeY = convertPlayerSize()
---         local points = {
---             {x - sizeX/2, y}, {x + sizeX/2, y},  -- left/right
---             {x, y - sizeY/2}, {x, y + sizeY/2},  -- top/bottom
---             {x - sizeX/2, y - sizeY/2},          -- corners
---             {x + sizeX/2, y - sizeY/2},
---             {x - sizeX/2, y + sizeY/2},
---             {x + sizeX/2, y + sizeY/2}
---         }
-        
---         for _, p in ipairs(points) do
---             if calculateMandelbrot(p[1], p[2]) < base_iter then
---                 return false
---             end
---         end
---         return true
---     end
-    
---     local zoomSteps = 0
---     -- Decrease step size cus sometimes its too big no matter how much zoom
---     -- Seems to make it way smoother descending
---     local moveDecreaser = 0.25
---     while not isValidPosition(proposed_re, proposed_im) and zoomSteps < 20 do
---         current_zoom = current_zoom * 1.1
---         escape_radius = escape_radius * zoom_escape_factor
---         xspan = 3.0 / current_zoom
---         yspan = 2.5 / current_zoom
---         moveAmount = 0.1 * xspan * moveDecreaser -- Recalculate move amount
---         proposed_re = center_re + moveX * moveAmount
---         proposed_im = center_im + moveY * moveAmount
---         zoomSteps = zoomSteps + 1
---     end
-    
---     -- Apply movement if valid
---     if isValidPosition(proposed_re, proposed_im) then
---         center_re = proposed_re
---         center_im = proposed_im
---     else
---         current_zoom = original_zoom
---     end
-    
---     update_bounds()
---     redraw_fractal()
--- end
 
 -- Basic helper functions cus these were being used often
 function convertPlayerSize()

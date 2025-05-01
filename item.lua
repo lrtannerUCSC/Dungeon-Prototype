@@ -1,24 +1,29 @@
--- item.lua
--- Item entity derived from base Entity
-
 local Entity = require("entity")
 
 local Item = {}
 Item.__index = Item
-setmetatable(Item, {__index = Entity})
+setmetatable(Item, {__index = Entity})  -- Proper inheritance
 
-function Item:new(x, y, name, itemType)
-    local instance = Entity:new(x, y)
+function Item:new(re, im, name, itemType)
+    local instance = Entity:new(0, 0)  -- Start with base entity
     setmetatable(instance, self)
     
-    -- Item-specific properties
-    instance.type = "item"
-    instance.name = name or "Unknown Item"
-    instance.itemType = itemType or "misc"  -- healing, weapon, misc
-    instance.color = {1, 1, 0}  -- Yellow
-    instance.width = 25
-    instance.height = 25
+    -- Complex space properties
+    instance.complex_x = re
+    instance.complex_y = im
+    instance.complex_size = 5
+    
+    -- Visual properties
+    instance.name = name or "Item"
+    instance.itemType = itemType or "misc"
+    instance.base_color = {0, 1, 0}
+    instance.current_color = {0, 1, 0}
+    instance.bob_height = 0
+    instance.bob_direction = 1
     instance.collected = false
+    instance.active = true
+    
+    -- Initialize animation properties
     instance.bobHeight = 0
     instance.bobDirection = 1
     
@@ -34,30 +39,31 @@ function Item:update(dt)
 end
 
 function Item:draw()
-    -- Draw at bob height
-    local originalY = self.y
-    self.y = self.y + self.bobHeight
+    -- Use computed screen coordinates
+    local draw_y = self.y + self.bobHeight
     
-    -- Draw the base entity
-    Entity.draw(self)
+    love.graphics.setColor(self.current_color)
+    love.graphics.rectangle('fill',
+        self.x - self.complex_size/2,
+        draw_y - self.complex_size/2,
+        self.complex_size, self.complex_size)
     
-    -- Draw item name
+    -- Text scales with view
+    local text_scale = math.max(0.5, self.complex_size/20)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.print(self.name, self.x - self.width/2, self.y - self.height/2 - 20)
-    
-    -- Reset y position
-    self.y = originalY
+    love.graphics.print(self.name,
+        self.x - self.complex_size/2,
+        draw_y - self.complex_size/2 - 15,
+        0, text_scale, text_scale)
 end
 
 function Item:onCollision(other)
-    -- Item-specific collision behavior
     if other.type == "player" and not self.collected then
-        -- Items disappear when collected by player
         if self.itemType == "healing" then
             other.health = math.min(other.health + 10, other.maxHealth)
         end
         self.collected = true
-        self.active = false  -- This will cause it to be removed in the next update
+        self.active = false
     end
 end
 
